@@ -16,9 +16,10 @@ rs_template_input = xlrd.open_workbook(os.path.join(os.getcwd(), "data", "Templa
 rs_template = xlutils.copy.copy(rs_template_input)
 
 # Table headers
-chrom_headers = ['Peak#','Name','Ret. Time','Area','Area%','RRT']
-area_headers = ['Title', 'Ret. Time', 'Area', 'Area%', 'NTP', 'Tailing Factor']
-
+# chrom_headers = ['Peak#','Name','Ret. Time','Area','Area%','RRT']
+# area_headers = ['Title', 'Ret. Time', 'Area', 'Area%', 'NTP', 'Tailing Factor']
+chrom_headers = ['Name','Ret. Time','Area']
+area_headers = ['Title','Area']
 
 
 def _getOutCell(outSheet, colIndex, rowIndex):
@@ -44,12 +45,12 @@ def setOutCell(outSheet, col, row, value):
             newCell.xf_idx = previousCell.xf_idx
 
 def calc_results (df_peak, df_rrf, compound, average_area, constant_1, constant_2, unit):
-    base_rrt = float(df_peak['Ret. Time'][df_peak['Name'].str.contains(compound, flags = re.IGNORECASE)].values.tolist()[0])
+    base_rt = float(df_peak['Ret. Time'][df_peak['Name'].str.contains(compound, flags = re.IGNORECASE)].values.tolist()[0])
     rrt_master = []
     impurity_master = []
     rrf_master = []
     for index, row in df_peak.iterrows():
-        name =row[1]
+        name =row[0]
         if(name.lower() == compound.lower()):
             impurity_master.append(0)
             rrt_master.append(1)
@@ -60,23 +61,23 @@ def calc_results (df_peak, df_rrf, compound, average_area, constant_1, constant_
 #             impurity_master.append(0)
 #             rrt_master.append(0)
 
-        area = float(row[3])
+        area = float(row[2])
         rrf_cond_1 = df_rrf['Compound'].str.contains(compound, flags = re.IGNORECASE)
         rrf_cond_2 = df_rrf['Impurity/Active Name'].str.contains(name, flags = re.IGNORECASE)
         rrf = df_rrf['RRF'][rrf_cond_1 & rrf_cond_2].values.tolist()
-        rrt = float(row[2])
+        rt = float(row[1])
 
         if(not(rrf)):
             print("ignoring {}".format(name))
             impurity_master.append(0)
-            rrt_res = round(rrt/base_rrt, ndigits=2)
+            rrt_res = round(rt/base_rt, ndigits=2)
             rrt_master.append(rrt_res)
             rrf_master.append(0)
             continue
 
         rrf = float(rrf[0])
         impurity = round((area/average_area) * constant_1 * constant_2 * (unit/rrf), ndigits=2)
-        rrt_res = round(rrt/base_rrt, ndigits=2)
+        rrt_res = round(rt/base_rt, ndigits=2)
         impurity_master.append(impurity)
         rrt_master.append(rrt_res)
         rrf_master.append(rrf)
@@ -217,7 +218,7 @@ def initiate_report_creation(compound, df_rrf, df_sample_prep, chrom_inputs, are
     # area table extraction
     tables = camelot.read_pdf(area_input, pages= 'all',flavor='stream')
     df_area_table = table_extratcor(tables, area_headers)
-    df_area_table = df_area_table[['Title', 'Area']]
+    df_area_table = df_area_table[['Title','Area']]
     average_area = float(df_area_table["Area"][df_area_table["Title"] == "Average"].values.tolist()[0])
 
 
@@ -229,6 +230,7 @@ def initiate_report_creation(compound, df_rrf, df_sample_prep, chrom_inputs, are
         # peak tables extratcion
         tables = camelot.read_pdf(chrom_input, pages= 'all',flavor='stream')
         df_peak_table = table_extratcor(tables, chrom_headers)
+        df_peak_table = df_peak_table.drop_duplicates(keep="first")
         inx_to_shift = df_peak_table[df_peak_table["Name"].str.contains(compound, flags = re.IGNORECASE)].index[0]
         df_peak_table = shift_row_to_top(df_peak_table, inx_to_shift)
         cond_1 = df_peak_table["Name"] == ''
@@ -249,7 +251,7 @@ def initiate_report_creation(compound, df_rrf, df_sample_prep, chrom_inputs, are
         sample_input_list = [sample_wt, sample_v1, sample_v2, sample_v3, sample_v4, sample_v5, sample_v6, sample_v7, label_claim, unit]
         fill_rs_sheet(rs_template_sheet, df_area_table, df_peak_table, sample_input_list)
         worksheets[index].name = chrom_input.split("\\")[-1].strip(".pdf")
-        
+
     rs_template._Workbook__worksheets = [worksheet for worksheet in rs_template._Workbook__worksheets if "Sheet" not in worksheet.name ]
     rs_template.active_sheet = 0
 
@@ -259,9 +261,9 @@ if __name__ == '__main__':
     # Famotidine
     # ketorolacTromethamine
     # LabetalolHCl
-    compound = 'Acyclovir'
-    input_list = [50.43,100,5,50,5,50,1,1,1,1,94.4]
-    # compound = input("Enter the compund name [As mentioned in the chromatogram] ")
+    # compound = 'Acyclovir'
+    # input_list = [50.43,100,5,50,5,50,1,1,1,1,94.4]
+    compound = input("Enter the compund name [As mentioned in the chromatogram] ")
 
     # input data sources
     df_rrf = pd.read_excel(os.path.join(os.getcwd(), 'data', 'Templates', 'RRF-template.xlsx'))
@@ -269,22 +271,18 @@ if __name__ == '__main__':
     area_input = os.path.join(os.getcwd(), "data", "RS", compound, "{}-areas.pdf".format(compound))
     chrom_inputs = glob.glob(os.path.join(os.getcwd(), "data", "RS", compound, '*.pdf'))
     chrom_inputs.remove(area_input)
-    # input_list = [0]*11
-    # input_list[0] = float(input("Enter the Weight taken "))
-    # input_list[1] = float(input("Enter the standard preparation v1 "))
-    # input_list[2] = float(input("Enter the standard preparation v2 "))
-    # input_list[3] = float(input("Enter the standard preparation v3 "))
-    # input_list[4] = float(input("Enter the standard preparation v4 "))
-    # input_list[5] = float(input("Enter the standard preparation v5 "))
-    # input_list[6] = float(input("Enter the standard preparation v6 "))
-    # input_list[7] = float(input("Enter the standard preparation v7 "))
-    # input_list[8] = float(input("Enter the standard preparation factor 1 "))
-    # input_list[9] = float(input("Enter the standard preparation factor 2 "))
-    # input_list[10] = float(input("Enter the standard preparation Potency "))
+    input_list = [0]*11
+    input_list[0] = float(input("Enter the Weight taken "))
+    input_list[1] = float(input("Enter the standard preparation v1 "))
+    input_list[2] = float(input("Enter the standard preparation v2 "))
+    input_list[3] = float(input("Enter the standard preparation v3 "))
+    input_list[4] = float(input("Enter the standard preparation v4 "))
+    input_list[5] = float(input("Enter the standard preparation v5 "))
+    input_list[6] = float(input("Enter the standard preparation v6 "))
+    input_list[7] = float(input("Enter the standard preparation v7 "))
+    input_list[8] = float(input("Enter the standard preparation factor 1 "))
+    input_list[9] = float(input("Enter the standard preparation factor 2 "))
+    input_list[10] = float(input("Enter the standard preparation Potency "))
     initiate_report_creation(compound, df_rrf, df_sample_prep, chrom_inputs, area_input, input_list)
     rs_template.save(os.path.join(os.getcwd(), "data", 'output', '{}-RS.xls'.format(compound)))
-    # output_sheets = initiate_report_creation(compound, df_rrf, df_sample_prep, chrom_inputs, area_input, input_list)
-    #
-    # for index, output_sheet in enumerate(output_sheets):
-    #     output_sheet.save(os.path.join(os.getcwd(), "data", 'output', '{}-RS-{}.xls'.format(compound,index+1)))
     print("Reports saved successfully, check Output folder.")
