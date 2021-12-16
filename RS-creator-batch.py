@@ -226,7 +226,7 @@ def initiate_report_creation(compound, df_rrf, df_sample_prep, chrom_inputs, are
     outputs = []
     worksheets = rs_template._Workbook__worksheets
     for index, chrom_input in enumerate(chrom_inputs):
-        # print(chrom_input)
+        print(chrom_input)
         # peak tables extratcion
         tables = camelot.read_pdf(chrom_input, pages= 'all',flavor='stream')
         df_peak_table = table_extratcor(tables, chrom_headers)
@@ -267,7 +267,7 @@ if __name__ == '__main__':
 
     # input data sources
     df_rrf = pd.read_excel(os.path.join(os.getcwd(), 'data', 'Templates', 'RRF-template.xlsx'))
-    df_sample_prep = pd.read_excel(os.path.join(os.getcwd(), 'data', 'Templates', 'Sample Preparation.xlsx'))
+    df_sample_prep = pd.read_excel(os.path.join(os.getcwd(), 'data', 'Templates', 'RS-sample-preparation.x'))
     area_input = os.path.join(os.getcwd(), "data", "RS", compound, "{}-areas.pdf".format(compound))
     chrom_inputs = glob.glob(os.path.join(os.getcwd(), "data", "RS", compound, '*.pdf'))
     chrom_inputs.remove(area_input)
