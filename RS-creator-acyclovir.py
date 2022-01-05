@@ -14,6 +14,7 @@ import tabula
 # template sheet
 rs_template_input = xlrd.open_workbook(os.path.join(os.getcwd(), "data", "Templates",'RS-template-batch.xls'), formatting_info=True)
 rs_template = xlutils.copy.copy(rs_template_input)
+imp_b_rs = xlutils.copy.copy(rs_template_input)
 
 # Table headers
 # chrom_headers = ['Peak#','Name','Ret. Time','Area','Area%','RRT']
@@ -69,6 +70,10 @@ def calc_results (df_peak, df_rrf, compound, average_area, constant_1, constant_
         rt = float(row[1])
 
         if(not(rrf)):
+            impurity_master.append(0)
+            rrt_res = round(rt/base_rt, ndigits=2)
+            rrt_master.append(rrt_res)
+            rrf_master.append(0)
             ignore_compounds.append(name)
             continue
 
@@ -108,9 +113,13 @@ def table_extratcor(tables, headers):
     return df_result_table
 
 
-def fill_rs_sheet(output_sheet, df_area_table, df_peak_table, sample_input_list):
+def fill_rs_sheet(output_sheet, df_area_table, df_peak_table, sample_input_list, input_list):
     average_area = float(df_area_table["Area"][df_area_table["Title"] == "Average"].values.tolist()[0])
     area_input = list(df_area_table['Area'])
+    if(len(area_input) != 9):
+        area_input.insert(3, '')
+        area_input.insert(4, '')
+        area_input.insert(5, '')
 
     #poject name
     setOutCell(output_sheet, 2, 3, '')
@@ -198,7 +207,7 @@ def fill_rs_sheet(output_sheet, df_area_table, df_peak_table, sample_input_list)
     sum_of_impurities = round(df_peak_table["% w/w"].sum(), ndigits=2)
     setOutCell(output_sheet, 6, 62, sum_of_impurities)
 
-def initiate_report_creation(compound, df_rrf, df_sample_prep, chrom_inputs, area_input, input_list):
+def initiate_report_creation(compound, df_rrf, df_sample_prep, chrom_inputs, area_input, input_list, area_input_imp_b, input_list_imp_b):
     sample_wt = df_sample_prep['vials'][df_sample_prep["Compound"].str.contains(compound, flags = re.IGNORECASE)].values.tolist()[0]
     sample_v1 = df_sample_prep['v1'][df_sample_prep["Compound"].str.contains(compound, flags = re.IGNORECASE)].values.tolist()[0]
     sample_v2 = df_sample_prep['v2'][df_sample_prep["Compound"].str.contains(compound, flags = re.IGNORECASE)].values.tolist()[0]
@@ -212,16 +221,23 @@ def initiate_report_creation(compound, df_rrf, df_sample_prep, chrom_inputs, are
 
     constant_1 = (input_list[0]/input_list[1]) * (input_list[2]/input_list[3]) * (input_list[4]/input_list[5])*(input_list[6]/input_list[7]) * (input_list[8]/input_list[9])
     constant_2 = (sample_v1/sample_wt) * (sample_v3/sample_v2) * (sample_v5/sample_v4) * (sample_v7/sample_v6) * (input_list[10]/label_claim)
-    # area table extraction
+    constant_3 = (input_list_imp_b[0]/input_list_imp_b[1]) * (input_list_imp_b[2]/input_list_imp_b[3]) * (input_list_imp_b[4]/input_list_imp_b[5])*(input_list_imp_b[6]/input_list_imp_b[7]) * (input_list_imp_b[8]/input_list_imp_b[9])
+    # area table extraction for acyclovir
     tables = camelot.read_pdf(area_input, pages= 'all',flavor='stream')
     df_area_table = table_extratcor(tables, area_headers)
     df_area_table = df_area_table[['Title','Area']]
     average_area = float(df_area_table["Area"][df_area_table["Title"] == "Average"].values.tolist()[0])
-
+    # area table extraction for impurity b
+    tables = camelot.read_pdf(area_input_imp_b, pages= 'all',flavor='stream')
+    df_area_table_imp_b = table_extratcor(tables, area_headers)
+    df_area_table_imp_b = df_area_table_imp_b[['Title','Area']]
+    average_area_imp_b = float(df_area_table_imp_b["Area"][df_area_table_imp_b["Title"] == "Average"].values.tolist()[0])
 
     batch_size = len(chrom_inputs)
     outputs = []
-    worksheets = rs_template._Workbook__worksheets
+    worksheets_acyclovir = rs_template._Workbook__worksheets
+    worksheets_imp_b = imp_b_rs._Workbook__worksheets
+
     for index, chrom_input in enumerate(chrom_inputs):
         print(chrom_input)
         # peak tables extratcion
@@ -235,25 +251,36 @@ def initiate_report_creation(compound, df_rrf, df_sample_prep, chrom_inputs, are
         inxs_to_remove = df_peak_table[cond_1 | cond_2].index
         df_peak_table = df_peak_table.drop(inxs_to_remove)
 
-        # impurity calculation
+        # impurity calculation for acyclovir
         impurities, rrts, rrfs, ignore_compounds = calc_results(df_peak_table, df_rrf, compound, average_area, constant_1, constant_2, unit)
-        for ic in ignore_compounds:
-            inx_to_remove = df_peak_table[df_peak_table['Name'] == ic].index
-            df_peak_table = df_peak_table.drop(inx_to_remove)
         df_peak_table['RRT'] = rrts
         df_peak_table['RRF'] = rrfs
-        df_peak_table["% w/w"] = impurities
+        df_peak_table['% w/w'] = impurities
         df_peak_table = df_peak_table[['Name', 'Ret. Time','RRT', 'RRF', 'Area', '% w/w']]
+        df_impurity_b = df_peak_table[df_peak_table['Name'].str.contains('Impurity-B', flags= re.IGNORECASE)]
+        df_peak_table = df_peak_table.drop( df_peak_table[df_peak_table['Name'].str.contains('Impurity-B', flags= re.IGNORECASE)].index)
 
-        # writing to output sheet
+        # impurity calculation for impurity B
+        df_impurity_b['RRF'] = [1]
+        imp_b_area = float(df_impurity_b['Area'][df_impurity_b['Name'].str.contains('Impurity-B', flags= re.IGNORECASE)].values.tolist()[0])
+        impurity = round((imp_b_area/average_area_imp_b) * constant_3 * constant_2 * (unit/1), ndigits=2)
+        df_impurity_b['% w/w'] = [impurity]
 
+        # writing to output sheet acyclovir
         rs_template_sheet = rs_template.get_sheet(index)
         sample_input_list = [sample_wt, sample_v1, sample_v2, sample_v3, sample_v4, sample_v5, sample_v6, sample_v7, label_claim, unit]
-        fill_rs_sheet(rs_template_sheet, df_area_table, df_peak_table, sample_input_list)
-        worksheets[index].name = chrom_input.split("\\")[-1].strip(".pdf")
+        fill_rs_sheet(rs_template_sheet, df_area_table, df_peak_table, sample_input_list, input_list)
+        worksheets_acyclovir[index].name = chrom_input.split("\\")[-1].strip(".pdf")
+
+        # writing to output sheet impurity B
+        imp_b_sheet = imp_b_rs.get_sheet(index)
+        fill_rs_sheet(imp_b_sheet, df_area_table_imp_b, df_impurity_b, sample_input_list, input_list_imp_b)
+        worksheets_imp_b[index].name = chrom_input.split("\\")[-1].strip(".pdf")
 
     rs_template._Workbook__worksheets = [worksheet for worksheet in rs_template._Workbook__worksheets if "Sheet" not in worksheet.name ]
     rs_template.active_sheet = 0
+    imp_b_rs._Workbook__worksheets = [worksheet for worksheet in imp_b_rs._Workbook__worksheets if "Sheet" not in worksheet.name ]
+    imp_b_rs.active_sheet = 0
 
 if __name__ == '__main__':
     # Bumetanide
@@ -263,26 +290,44 @@ if __name__ == '__main__':
     # LabetalolHCl
     # compound = 'Acyclovir'
     # input_list = [50.43,100,5,50,5,50,1,1,1,1,94.4]
-    compound = input("Enter the compund name [As mentioned in the chromatogram] ")
-
+    # compound = input("Enter the compund name [As mentioned in the chromatogram] ")
+    compound = 'Acyclovir'
+    input_list = [50.43,100,5,50,5,50,1,1,1,1,94.4]
+    input_list_imp_b = [1.2197,10,0.7,10,1,1,1,1,1,1,98.34]
     # input data sources
     df_rrf = pd.read_excel(os.path.join(os.getcwd(), 'data', 'Templates', 'RRF-template.xlsx'))
     df_sample_prep = pd.read_excel(os.path.join(os.getcwd(), 'data', 'Templates', 'RS-sample-preparation.xlsx'))
     area_input = os.path.join(os.getcwd(), "data", "RS", compound, "{}-areas.pdf".format(compound))
+    area_input_imp_b = os.path.join(os.getcwd(), "data", "RS", compound, "Impurity-B-areas.pdf")
     chrom_inputs = glob.glob(os.path.join(os.getcwd(), "data", "RS", compound, '*.pdf'))
     chrom_inputs.remove(area_input)
-    input_list = [0]*11
-    input_list[0] = float(input("Enter the Weight taken "))
-    input_list[1] = float(input("Enter the standard preparation v1 "))
-    input_list[2] = float(input("Enter the standard preparation v2 "))
-    input_list[3] = float(input("Enter the standard preparation v3 "))
-    input_list[4] = float(input("Enter the standard preparation v4 "))
-    input_list[5] = float(input("Enter the standard preparation v5 "))
-    input_list[6] = float(input("Enter the standard preparation v6 "))
-    input_list[7] = float(input("Enter the standard preparation v7 "))
-    input_list[8] = float(input("Enter the standard preparation factor 1 "))
-    input_list[9] = float(input("Enter the standard preparation factor 2 "))
-    input_list[10] = float(input("Enter the standard preparation Potency "))
-    initiate_report_creation(compound, df_rrf, df_sample_prep, chrom_inputs, area_input, input_list)
+    chrom_inputs.remove(area_input_imp_b)
+    # input_list = [0]*11
+    # input_list[0] = float(input("Enter the Weight taken for Acyclovir "))
+    # input_list[1] = float(input("Enter the standard preparation v1 for Acyclovir "))
+    # input_list[2] = float(input("Enter the standard preparation v2 for Acyclovir "))
+    # input_list[3] = float(input("Enter the standard preparation v3 for Acyclovir "))
+    # input_list[4] = float(input("Enter the standard preparation v4 for Acyclovir "))
+    # input_list[5] = float(input("Enter the standard preparation v5 for Acyclovir "))
+    # input_list[6] = float(input("Enter the standard preparation v6 for Acyclovir "))
+    # input_list[7] = float(input("Enter the standard preparation v7 for Acyclovir "))
+    # input_list[8] = float(input("Enter the standard preparation factor 1 for Acyclovir "))
+    # input_list[9] = float(input("Enter the standard preparation factor 2 for Acyclovir "))
+    # input_list[10] = float(input("Enter the standard preparation Potency for Acyclovir "))
+    # input_list_imp_b = [0]*11
+    # input_list_imp_b[0] = float(input("Enter the Weight taken for impurity B "))
+    # input_list_imp_b[1] = float(input("Enter the standard preparation v1 for impurity B "))
+    # input_list_imp_b[2] = float(input("Enter the standard preparation v2 for impurity B "))
+    # input_list_imp_b[3] = float(input("Enter the standard preparation v3 for impurity B "))
+    # input_list_imp_b[4] = float(input("Enter the standard preparation v4 for impurity B "))
+    # input_list_imp_b[5] = float(input("Enter the standard preparation v5 for impurity B "))
+    # input_list_imp_b[6] = float(input("Enter the standard preparation v6 for impurity B "))
+    # input_list_imp_b[7] = float(input("Enter the standard preparation v7 for impurity B "))
+    # input_list_imp_b[8] = float(input("Enter the standard preparation factor 1 for impurity B "))
+    # input_list_imp_b[9] = float(input("Enter the standard preparation factor 2 for impurity B "))
+    # input_list_imp_b[10] = float(input("Enter the standard preparation Potency for impurity B "))
+    initiate_report_creation(compound, df_rrf, df_sample_prep, chrom_inputs, area_input, input_list, area_input_imp_b, input_list_imp_b)
     rs_template.save(os.path.join(os.getcwd(), "data", 'output', '{}-RS.xls'.format(compound)))
+    imp_b_rs.save(os.path.join(os.getcwd(), "data", 'output', 'Impurity-B-RS.xls'))
+
     print("Reports saved successfully, check Output folder.")
