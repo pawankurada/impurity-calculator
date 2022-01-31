@@ -12,7 +12,7 @@ import camelot
 import tabula
 
 # template sheet
-rs_template_input = xlrd.open_workbook(os.path.join(os.getcwd(), "data", "Templates",'RS-template-batch.xls'), formatting_info=True)
+rs_template_input = xlrd.open_workbook(os.path.join(os.getcwd(), "data", "Templates",'RS-template.xls'), formatting_info=True)
 rs_template = xlutils.copy.copy(rs_template_input)
 imp_b_rs = xlutils.copy.copy(rs_template_input)
 
@@ -109,30 +109,37 @@ def table_extratcor(tables, headers):
             result_tables.append(df_table)
         else:
             continue
-    df_result_table = pd.concat(result_tables, ignore_index=True)
+    try:
+        df_result_table = pd.concat(result_tables, ignore_index=True)
+    except ValueError as ve:
+        print("No tables/values found in this file\n")
+        return pd.DataFrame()
+
     return df_result_table
 
 
 def fill_rs_sheet(output_sheet, df_area_table, df_peak_table, sample_input_list, input_list):
     average_area = float(df_area_table["Area"][df_area_table["Title"] == "Average"].values.tolist()[0])
     area_input = list(df_area_table['Area'])
+    project_name = 'Acyloivr'
     if(len(area_input) != 9):
         area_input.insert(3, '')
         area_input.insert(4, '')
         area_input.insert(5, '')
+        project_name = 'Impurity-B (Acyloivr)'
 
     #poject name
-    setOutCell(output_sheet, 2, 3, '')
+    setOutCell(output_sheet, 2, 3, project_name)
     #Date
-    setOutCell(output_sheet, 2, 4, '')
+    setOutCell(output_sheet, 2, 4, input_list[11])
     #Method
-    setOutCell(output_sheet, 2, 5, '')
+    setOutCell(output_sheet, 2, 5, input_list[12])
     # WS ID No.
-    setOutCell(output_sheet, 1, 9, '')
+    setOutCell(output_sheet, 1, 9, input_list[13])
     # potency
-    setOutCell(output_sheet, 3, 9, input_list[-1])
+    setOutCell(output_sheet, 3, 9, input_list[10])
     # use before date
-    setOutCell(output_sheet, 5, 9, '')
+    setOutCell(output_sheet, 5, 9, input_list[14])
     # Average area
     setOutCell(output_sheet, 7, 9, average_area)
     # std_wt
@@ -204,7 +211,7 @@ def fill_rs_sheet(output_sheet, df_area_table, df_peak_table, sample_input_list,
         setOutCell(output_sheet, 6, table_row, row[5])
         table_row +=1
 
-    sum_of_impurities = round(df_peak_table["% w/w"].sum(), ndigits=2)
+    sum_of_impurities = str(round(df_peak_table["% w/w"].sum(), ndigits=2))
     setOutCell(output_sheet, 6, 62, sum_of_impurities)
 
 def initiate_report_creation(compound, df_rrf, df_sample_prep, chrom_inputs, area_input, input_list, area_input_imp_b, input_list_imp_b):
@@ -243,6 +250,8 @@ def initiate_report_creation(compound, df_rrf, df_sample_prep, chrom_inputs, are
         # peak tables extratcion
         tables = camelot.read_pdf(chrom_input, pages= 'all',flavor='stream')
         df_peak_table = table_extratcor(tables, chrom_headers)
+        if (df_peak_table.empty):
+            continue
         df_peak_table = df_peak_table.drop_duplicates(keep="first")
         inx_to_shift = df_peak_table[df_peak_table["Name"].str.contains(compound, flags = re.IGNORECASE)].index[0]
         df_peak_table = shift_row_to_top(df_peak_table, inx_to_shift)
@@ -292,17 +301,14 @@ if __name__ == '__main__':
     # input_list = [50.43,100,5,50,5,50,1,1,1,1,94.4]
     # compound = input("Enter the compund name [As mentioned in the chromatogram] ")
     compound = 'Acyclovir'
-    input_list = [50.43,100,5,50,5,50,1,1,1,1,94.4]
-    input_list_imp_b = [1.2197,10,0.7,10,1,1,1,1,1,1,98.34]
+    year = str(datetime.today().year)
+    input_list = [50.43,100,5,50,5,50,1,1,1,1,94.4, '10/10/2022', 'test_method', 'wsid_test', '10/10/2023']
+    input_list_imp_b = [1.2197,10,0.7,10,1,1,1,1,1,1,98.34,'10/10/2022', 'test_method', 'wsid_test', '10/10/2023']
     # input data sources
     df_rrf = pd.read_excel(os.path.join(os.getcwd(), 'data', 'Templates', 'RRF-template.xlsx'))
     df_sample_prep = pd.read_excel(os.path.join(os.getcwd(), 'data', 'Templates', 'RS-sample-preparation.xlsx'))
-    area_input = os.path.join(os.getcwd(), "data", "RS", compound, "{}-areas.pdf".format(compound))
-    area_input_imp_b = os.path.join(os.getcwd(), "data", "RS", compound, "Impurity-B-areas.pdf")
-    chrom_inputs = glob.glob(os.path.join(os.getcwd(), "data", "RS", compound, '*.pdf'))
-    chrom_inputs.remove(area_input)
-    chrom_inputs.remove(area_input_imp_b)
-    # input_list = [0]*11
+
+    # input_list = [0]*15
     # input_list[0] = float(input("Enter the Weight taken for Acyclovir "))
     # input_list[1] = float(input("Enter the standard preparation v1 for Acyclovir "))
     # input_list[2] = float(input("Enter the standard preparation v2 for Acyclovir "))
@@ -314,7 +320,11 @@ if __name__ == '__main__':
     # input_list[8] = float(input("Enter the standard preparation factor 1 for Acyclovir "))
     # input_list[9] = float(input("Enter the standard preparation factor 2 for Acyclovir "))
     # input_list[10] = float(input("Enter the standard preparation Potency for Acyclovir "))
-    # input_list_imp_b = [0]*11
+    # input_list[11] = input("Enter the date of analysis for Acyclovir (dd.mm.yyyy) ")
+    # input_list[12] = input("Enter the method of for Acyclovir reference ")
+    # input_list[13] = input("Enter WSID number for Acyclovir ")
+    # input_list[14] = input("Enter the use before date for Acyclovir (dd.mm.yyyy) ")
+    # input_list_imp_b = [0]*15
     # input_list_imp_b[0] = float(input("Enter the Weight taken for impurity B "))
     # input_list_imp_b[1] = float(input("Enter the standard preparation v1 for impurity B "))
     # input_list_imp_b[2] = float(input("Enter the standard preparation v2 for impurity B "))
@@ -326,8 +336,17 @@ if __name__ == '__main__':
     # input_list_imp_b[8] = float(input("Enter the standard preparation factor 1 for impurity B "))
     # input_list_imp_b[9] = float(input("Enter the standard preparation factor 2 for impurity B "))
     # input_list_imp_b[10] = float(input("Enter the standard preparation Potency for impurity B "))
+    # input_list_imp_b[11] = input("Enter the date of analysis for Impurity-B (dd.mm.yyyy) ")
+    # input_list_imp_b[12] = input("Enter the method of for Impurity-B reference ")
+    # input_list_imp_b[13] = input("Enter WSID number for Impurity-B ")
+    # input_list_imp_b[14] = input("Enter the use before date for Impurity-B (dd.mm.yyyy) ")
+    area_input = os.path.join(os.getcwd(), "data", year, compound, "RS", input_list[11], "{}-areas.pdf".format(compound))
+    area_input_imp_b = os.path.join(os.getcwd(), "data", year, compound, "RS", input_list[11], "Impurity-B-areas.pdf")
+    chrom_inputs = glob.glob(os.path.join(os.getcwd(), "data", year, compound, "RS", input_list[11], '*.pdf'))
+    chrom_inputs.remove(area_input)
+    chrom_inputs.remove(area_input_imp_b)
     initiate_report_creation(compound, df_rrf, df_sample_prep, chrom_inputs, area_input, input_list, area_input_imp_b, input_list_imp_b)
-    rs_template.save(os.path.join(os.getcwd(), "data", 'output', '{}-RS.xls'.format(compound)))
-    imp_b_rs.save(os.path.join(os.getcwd(), "data", 'output', 'Impurity-B-RS.xls'))
+    rs_template.save(os.path.join(os.getcwd(), "data", year, compound, "RS", input_list[11], '{}-RS.xls'.format(compound)))
+    imp_b_rs.save(os.path.join(os.getcwd(), "data", year, compound, "RS", input_list[11], 'Impurity-B-RS.xls'))
 
     print("Reports saved successfully, check Output folder.")

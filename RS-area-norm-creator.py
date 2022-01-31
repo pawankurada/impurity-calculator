@@ -72,6 +72,7 @@ def table_extratcor(tables, headers):
         search = df_table.where(df_table==headers[0]).dropna(how='all').dropna(axis=1)
         inx = list(search.index)
         if(inx):
+            print(table)
             inx= inx[0]
             new_header = df_table.iloc[inx]
             new_start_inx = inx+1
@@ -81,7 +82,11 @@ def table_extratcor(tables, headers):
             result_tables.append(df_table)
         else:
             continue
-    df_result_table = pd.concat(result_tables, ignore_index=True)
+    try:
+        df_result_table = pd.concat(result_tables, ignore_index=True)
+    except ValueError as ve:
+        print("No tables/values found in this file\n")
+        return pd.DataFrame()
     return df_result_table
 
 
@@ -93,17 +98,17 @@ def fill_rs_sheet(output_sheet, df_peak_table, user_input_list, ap_sum):
     # main peak area
     setOutCell(output_sheet, 5, 4, user_input_list[0])
     # Base RT
-    setOutCell(output_sheet, 3, 3, user_input_list[-1])
+    setOutCell(output_sheet, 3, 3, user_input_list[5])
     # dilution factor 1
     setOutCell(output_sheet, 9, 1, user_input_list[1])
     # dilution factor 1
     setOutCell(output_sheet, 9, 2, user_input_list[2])
     # Factor
-    setOutCell(output_sheet, 12, 2, user_input_list[3])
+    setOutCell(output_sheet, 12, 2, user_input_list[4])
 #   RRT table
     table_row = 4
     for index, row in df_peak_table.iterrows():
-        if(table_row > 39):
+        if(table_row > 102):
             break
         setOutCell(output_sheet, 0, table_row, row[0])
         setOutCell(output_sheet, 1, table_row, row[1])
@@ -114,11 +119,11 @@ def fill_rs_sheet(output_sheet, df_peak_table, user_input_list, ap_sum):
 
     sum_of_areas = round(df_peak_table["Area"].sum(), ndigits=2)
     sum_of_percentage = df_peak_table["Area%"].sum()
-    sum_of_rrt = round(((user_input_list[3]*user_input_list[0]) / ((user_input_list[3] * user_input_list[0])+sum_of_areas))*100, ndigits=1)
+    sum_of_rrt = round(((user_input_list[4]*user_input_list[0]) / ((user_input_list[4] * user_input_list[0])+sum_of_areas))*100, ndigits=1)
 
-    setOutCell(output_sheet, 2, 40, sum_of_areas)
-    setOutCell(output_sheet, 3, 40, ap_sum)
-    setOutCell(output_sheet, 4, 40  , sum_of_rrt)
+    setOutCell(output_sheet, 2, 103, sum_of_areas)
+    setOutCell(output_sheet, 3, 103, ap_sum)
+    setOutCell(output_sheet, 4, 103  , sum_of_rrt)
 
 def initiate_report_creation(compound, chrom_inputs, input_list):
     dil_s01 = input_list[1]
@@ -127,14 +132,20 @@ def initiate_report_creation(compound, chrom_inputs, input_list):
     batch_size = len(chrom_inputs)
     worksheets = area_norm_template._Workbook__worksheets
     for index, chrom_input in enumerate(chrom_inputs):
-        sheet_name = chrom_input.split("\\")[-1].strip(".pdf")
-        input_list[0] = float(input("Enter main peak area for {}".format(sheet_name)))
+        worksheet_name = chrom_input.split("\\")[-1].strip(".pdf")
+        input_list[0] = float(input("Enter main peak area for {} ".format(worksheet_name)))
         main_peak = input_list[0]
         # peak tables extratcion
-        tables = camelot.read_pdf(chrom_input, pages= 'all',flavor='stream')
+        tables = camelot.read_pdf(chrom_input, pages= 'all', line_scale = 30)
         df_peak_table = table_extratcor(tables, chrom_headers)
+        if(df_peak_table.empty):
+            continue
         df_peak_table = df_peak_table.drop_duplicates(keep="first")
-        base_rt = float(df_peak_table['Ret. Time'][df_peak_table["Name"].str.contains(compound, flags = re.IGNORECASE)].values.tolist()[0])
+        try:
+            base_rt = float(df_peak_table['Ret. Time'][df_peak_table["Name"].str.contains(compound, flags = re.IGNORECASE)].values.tolist()[0])
+        except IndexError as ie:
+            print("\"{}\" might not be present in the tables of the file {}.Please check this file".format(compound,worksheet_name))
+            continue
         compound_row = df_peak_table[df_peak_table["Name"].str.contains(compound, flags = re.IGNORECASE)].index
         df_peak_table = df_peak_table.drop(compound_row)
         cond_1 = df_peak_table["Name"] == ''
@@ -154,7 +165,7 @@ def initiate_report_creation(compound, chrom_inputs, input_list):
         area_norm_sheet = area_norm_template.get_sheet(index)
         user_input_list = input_list + [factor,base_rt]
         fill_rs_sheet(area_norm_sheet, df_peak_table, user_input_list, ap_sum)
-        worksheets[index].name = sheet_name
+        worksheets[index].name = worksheet_name
 
     area_norm_template._Workbook__worksheets = [worksheet for worksheet in area_norm_template._Workbook__worksheets if "Sheet" not in worksheet.name ]
     area_norm_template.active_sheet = 0
@@ -167,14 +178,15 @@ if __name__ == '__main__':
     # LabetalolHCl
     # compound = 'Acyclovir'
     # input_list = [50.43,100,5,50,5,50,1,1,1,1,94.4]
+    year = str(datetime.today().year)
     compound = input("Enter the compund name [As mentioned in the chromatogram] ")
 
     # input data sources
-    chrom_inputs = glob.glob(os.path.join(os.getcwd(), "data", "RS-area-norm", compound, '*.pdf'))
-    input_list = [0]*3
-    # input_list[0] = float(input("Enter main peak area "))
+    input_list = [0]*4
+    input_list[3] = input("Enter the date of analysis ")
     input_list[1] = float(input("Enter the dilution factor of sample 01 "))
     input_list[2] = float(input("Enter the dilution factor of sample 02 "))
+    chrom_inputs = glob.glob(os.path.join(os.getcwd(), "data", year, compound, "RS", input_list[3], '*.pdf'))
     initiate_report_creation(compound,chrom_inputs, input_list)
-    area_norm_template.save(os.path.join(os.getcwd(), "data", 'output', '{}-RS-area-norm.xls'.format(compound)))
+    area_norm_template.save(os.path.join(os.getcwd(), "data", year, compound, "RS", input_list[3], '{}-RS-area-norm.xls'.format(compound)))
     print("Reports saved successfully, check Output folder.")

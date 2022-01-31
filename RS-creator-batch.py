@@ -12,7 +12,7 @@ import camelot
 import tabula
 
 # template sheet
-rs_template_input = xlrd.open_workbook(os.path.join(os.getcwd(), "data", "Templates",'RS-template-batch.xls'), formatting_info=True)
+rs_template_input = xlrd.open_workbook(os.path.join(os.getcwd(), "data", "Templates",'RS-template.xls'), formatting_info=True)
 rs_template = xlutils.copy.copy(rs_template_input)
 
 # Table headers
@@ -104,26 +104,31 @@ def table_extratcor(tables, headers):
             result_tables.append(df_table)
         else:
             continue
-    df_result_table = pd.concat(result_tables, ignore_index=True)
+    try:
+        df_result_table = pd.concat(result_tables, ignore_index=True)
+    except ValueError as ve:
+        print("No tables/values found in this file\n")
+        return pd.DataFrame()
+
     return df_result_table
 
 
-def fill_rs_sheet(output_sheet, df_area_table, df_peak_table, sample_input_list):
+def fill_rs_sheet(output_sheet, df_area_table, df_peak_table, sample_input_list, input_list):
     average_area = float(df_area_table["Area"][df_area_table["Title"] == "Average"].values.tolist()[0])
     area_input = list(df_area_table['Area'])
 
     #poject name
-    setOutCell(output_sheet, 2, 3, '')
+    setOutCell(output_sheet, 2, 3, input_list[15])
     #Date
-    setOutCell(output_sheet, 2, 4, '')
+    setOutCell(output_sheet, 2, 4, input_list[11])
     #Method
-    setOutCell(output_sheet, 2, 5, '')
+    setOutCell(output_sheet, 2, 5, input_list[12])
     # WS ID No.
-    setOutCell(output_sheet, 1, 9, '')
+    setOutCell(output_sheet, 1, 9, input_list[13])
     # potency
-    setOutCell(output_sheet, 3, 9, input_list[-1])
+    setOutCell(output_sheet, 3, 9, input_list[10])
     # use before date
-    setOutCell(output_sheet, 5, 9, '')
+    setOutCell(output_sheet, 5, 9, input_list[14])
     # Average area
     setOutCell(output_sheet, 7, 9, average_area)
     # std_wt
@@ -195,7 +200,7 @@ def fill_rs_sheet(output_sheet, df_area_table, df_peak_table, sample_input_list)
         setOutCell(output_sheet, 6, table_row, row[5])
         table_row +=1
 
-    sum_of_impurities = round(df_peak_table["% w/w"].sum(), ndigits=2)
+    sum_of_impurities = str(round(df_peak_table["% w/w"].sum(), ndigits=2))
     setOutCell(output_sheet, 6, 62, sum_of_impurities)
 
 def initiate_report_creation(compound, df_rrf, df_sample_prep, chrom_inputs, area_input, input_list):
@@ -213,7 +218,7 @@ def initiate_report_creation(compound, df_rrf, df_sample_prep, chrom_inputs, are
     constant_1 = (input_list[0]/input_list[1]) * (input_list[2]/input_list[3]) * (input_list[4]/input_list[5])*(input_list[6]/input_list[7]) * (input_list[8]/input_list[9])
     constant_2 = (sample_v1/sample_wt) * (sample_v3/sample_v2) * (sample_v5/sample_v4) * (sample_v7/sample_v6) * (input_list[10]/label_claim)
     # area table extraction
-    tables = camelot.read_pdf(area_input, pages= 'all',flavor='stream')
+    tables = camelot.read_pdf(area_input, pages= 'all', line_scale =30)
     df_area_table = table_extratcor(tables, area_headers)
     df_area_table = df_area_table[['Title','Area']]
     average_area = float(df_area_table["Area"][df_area_table["Title"] == "Average"].values.tolist()[0])
@@ -223,12 +228,19 @@ def initiate_report_creation(compound, df_rrf, df_sample_prep, chrom_inputs, are
     outputs = []
     worksheets = rs_template._Workbook__worksheets
     for index, chrom_input in enumerate(chrom_inputs):
-        print(chrom_input)
+        worksheet_name =  chrom_input.split("\\")[-1].strip(".pdf")
+        print(worksheet_name)
         # peak tables extratcion
-        tables = camelot.read_pdf(chrom_input, pages= 'all',flavor='stream')
+        tables = camelot.read_pdf(chrom_input, pages= 'all', line_scale =30)
         df_peak_table = table_extratcor(tables, chrom_headers)
+        if (df_peak_table.empty):
+            continue
         df_peak_table = df_peak_table.drop_duplicates(keep="first")
-        inx_to_shift = df_peak_table[df_peak_table["Name"].str.contains(compound, flags = re.IGNORECASE)].index[0]
+        try:
+            inx_to_shift = df_peak_table[df_peak_table["Name"].str.contains(compound, flags = re.IGNORECASE)].index[0]
+        except IndexError as ie:
+            print("\"{}\" might not be present in the tables of the file {}.Please check this file".format(compound,worksheet_name))
+            continue
         df_peak_table = shift_row_to_top(df_peak_table, inx_to_shift)
         cond_1 = df_peak_table["Name"] == ''
         cond_2 = df_peak_table["Name"] == np.nan
@@ -249,8 +261,8 @@ def initiate_report_creation(compound, df_rrf, df_sample_prep, chrom_inputs, are
 
         rs_template_sheet = rs_template.get_sheet(index)
         sample_input_list = [sample_wt, sample_v1, sample_v2, sample_v3, sample_v4, sample_v5, sample_v6, sample_v7, label_claim, unit]
-        fill_rs_sheet(rs_template_sheet, df_area_table, df_peak_table, sample_input_list)
-        worksheets[index].name = chrom_input.split("\\")[-1].strip(".pdf")
+        fill_rs_sheet(rs_template_sheet, df_area_table, df_peak_table, sample_input_list, input_list)
+        worksheets[index].name = worksheet_name
 
     rs_template._Workbook__worksheets = [worksheet for worksheet in rs_template._Workbook__worksheets if "Sheet" not in worksheet.name ]
     rs_template.active_sheet = 0
@@ -264,14 +276,13 @@ if __name__ == '__main__':
     # compound = 'Acyclovir'
     # input_list = [50.43,100,5,50,5,50,1,1,1,1,94.4]
     compound = input("Enter the compund name [As mentioned in the chromatogram] ")
+    year = str(datetime.today().year)
 
     # input data sources
     df_rrf = pd.read_excel(os.path.join(os.getcwd(), 'data', 'Templates', 'RRF-template.xlsx'))
     df_sample_prep = pd.read_excel(os.path.join(os.getcwd(), 'data', 'Templates', 'RS-sample-preparation.xlsx'))
-    area_input = os.path.join(os.getcwd(), "data", "RS", compound, "{}-areas.pdf".format(compound))
-    chrom_inputs = glob.glob(os.path.join(os.getcwd(), "data", "RS", compound, '*.pdf'))
-    chrom_inputs.remove(area_input)
-    input_list = [0]*11
+
+    input_list = [0]*16
     input_list[0] = float(input("Enter the Weight taken "))
     input_list[1] = float(input("Enter the standard preparation v1 "))
     input_list[2] = float(input("Enter the standard preparation v2 "))
@@ -283,6 +294,15 @@ if __name__ == '__main__':
     input_list[8] = float(input("Enter the standard preparation factor 1 "))
     input_list[9] = float(input("Enter the standard preparation factor 2 "))
     input_list[10] = float(input("Enter the standard preparation Potency "))
+    input_list[11] = input("Enter the date of analysis (dd.mm.yyyy) ")
+    input_list[12] = input("Enter the method of reference ")
+    input_list[13] = input("Enter WSID number ")
+    input_list[14] = input("Enter the use before date (dd.mm.yyyy) ")
+    input_list[15] = compound
+    area_input = os.path.join(os.getcwd(), "data", year, compound, "RS", input_list[11], "{}-areas.pdf".format(compound))
+    chrom_inputs = glob.glob(os.path.join(os.getcwd(), "data", year, compound, "RS", input_list[11], '*.pdf'))
+    chrom_inputs.remove(area_input)
+
     initiate_report_creation(compound, df_rrf, df_sample_prep, chrom_inputs, area_input, input_list)
-    rs_template.save(os.path.join(os.getcwd(), "data", 'output', '{}-RS.xls'.format(compound)))
+    rs_template.save(os.path.join(os.getcwd(), "data", year, compound, "RS", input_list[11], '{}-RS.xls'.format(compound)))
     print("Reports saved successfully, check Output folder.")

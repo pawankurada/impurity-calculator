@@ -72,26 +72,31 @@ def table_extratcor(tables, headers):
             result_tables.append(df_table)
         else:
             continue
-    df_result_table = pd.concat(result_tables, ignore_index=True)
+    try:
+        df_result_table = pd.concat(result_tables, ignore_index=True)
+    except ValueError as ve:
+        print("No tables/values found in this file\n")
+        return pd.DataFrame()
+
     return df_result_table
 
 
-def fill_rs_sheet(output_sheet, df_area_table, df_peak_table, sample_input_list):
+def fill_rs_sheet(output_sheet, df_area_table, df_peak_table, sample_input_list, input_list):
     average_area = float(df_area_table["Area"][df_area_table["Title"] == "Average"].values.tolist()[0])
     area_input = list(df_area_table['Area'])
 
     #poject name
-    setOutCell(output_sheet, 2, 3, '')
+    setOutCell(output_sheet, 2, 3, input_list[15])
     #Date
-    setOutCell(output_sheet, 2, 4, '')
+    setOutCell(output_sheet, 2, 4, input_list[11])
     #Method
-    setOutCell(output_sheet, 2, 5, '')
+    setOutCell(output_sheet, 2, 5, input_list[12])
     # WS ID No.
-    setOutCell(output_sheet, 1, 10, '')
+    setOutCell(output_sheet, 1, 10, input_list[13])
     # potency
-    setOutCell(output_sheet, 3, 10, input_list[-1])
+    setOutCell(output_sheet, 3, 10, input_list[10])
     # use before date
-    setOutCell(output_sheet, 5, 10, '')
+    setOutCell(output_sheet, 5, 10, input_list[14])
     # Average area
     setOutCell(output_sheet, 7, 10, average_area)
     # std_wt
@@ -128,7 +133,7 @@ def fill_rs_sheet(output_sheet, df_area_table, df_peak_table, sample_input_list)
 #   Impurity table
     table_row = 17
     for index, row in df_peak_table.iterrows():
-        if(table_row > 47):
+        if(table_row > 216):
             break
         # AR NO
         setOutCell(output_sheet, 1, table_row, '')
@@ -166,7 +171,7 @@ def initiate_report_creation(compound, df_sample_prep, chrom_inputs, area_input,
     constant_2 = (sample_v1/sample_qty) * (sample_v3/sample_v2) * (input_list[10]/label_claim)
     # area table extraction
     tables = camelot.read_pdf(area_input, pages= 'all', line_scale =30)
-    tables = [tables[6]] #temporary for lidocaine
+    # tables = [tables[6]] #temporary for lidocaine
     df_area_table = table_extratcor(tables, area_headers)
     df_area_table = df_area_table[['Title','Area']]
     average_area = float(df_area_table["Area"][df_area_table["Title"] == "Average"].values.tolist()[0])
@@ -181,6 +186,8 @@ def initiate_report_creation(compound, df_sample_prep, chrom_inputs, area_input,
         # peak tables extratcion
         tables = camelot.read_pdf(chrom_input, pages= 'all', line_scale =30)
         df_peak_table = table_extratcor(tables, chrom_headers)
+        if (df_peak_table.empty):
+            continue
         df_peak_table = df_peak_table.drop_duplicates(keep="first")
         inx_to_shift = df_peak_table[df_peak_table["Name"].str.contains(compound, flags = re.IGNORECASE)].index[0]
         df_peak_table = shift_row_to_top(df_peak_table, inx_to_shift)
@@ -208,19 +215,16 @@ def initiate_report_creation(compound, df_sample_prep, chrom_inputs, area_input,
     df_peak_master = pd.concat(peak_master)
     assay_template_sheet = assay_template.get_sheet(0)
     sample_input_list = [sample_qty, sample_v1, sample_v2, sample_v3,label_claim, unit]
-    fill_rs_sheet(assay_template_sheet, df_area_table, df_peak_master, sample_input_list)
+    fill_rs_sheet(assay_template_sheet, df_area_table, df_peak_master, sample_input_list, input_list)
     # worksheets[0].name = worksheet_name
     # assay_template.active_sheet = 0
 
 if __name__ == '__main__':
     compound = input("Enter the compund name [As mentioned in the chromatogram] ")
-
+    year = str(datetime.today().year)
     # input data sources
     df_sample_prep = pd.read_excel(os.path.join(os.getcwd(), 'data', 'Templates', 'Assay-sample-preparation.xlsx'))
-    area_input = os.path.join(os.getcwd(), "data", "Assay", compound, "{}-areas.pdf".format(compound))
-    chrom_inputs = glob.glob(os.path.join(os.getcwd(), "data", "Assay", compound, '*.pdf'))
-    chrom_inputs.remove(area_input)
-    input_list = [0]*11
+    input_list = [0]*16
     input_list[0] = float(input("Enter the Weight taken "))
     input_list[1] = float(input("Enter the standard preparation v1 "))
     input_list[2] = float(input("Enter the standard preparation v2 "))
@@ -232,6 +236,15 @@ if __name__ == '__main__':
     input_list[8] = float(input("Enter the standard preparation factor 1 "))
     input_list[9] = float(input("Enter the standard preparation factor 2 "))
     input_list[10] = float(input("Enter the standard preparation Potency "))
+    input_list[11] = input("Enter the date of analysis (dd/mm/yyyy) ")
+    input_list[12] = input("Enter the method of reference ")
+    input_list[13] = input("Enter WSID number ")
+    input_list[14] = input("Enter the use before date (dd/mm/yyyy) ")
+    input_list[15] = compound
+    area_input = os.path.join(os.getcwd(), "data", year, compound, "Assay", input_list[11], "{}-areas.pdf".format(compound))
+    chrom_inputs = glob.glob(os.path.join(os.getcwd(), "data", year, compound, "Assay", input_list[11],  '*.pdf'))
+    chrom_inputs.remove(area_input)
     initiate_report_creation(compound, df_sample_prep, chrom_inputs, area_input, input_list)
-    assay_template.save(os.path.join(os.getcwd(), "data", 'output', '{}-assay.xls'.format(compound)))
+    assay_template.save(os.path.join(os.getcwd(), "data", year, compound, "Assay", input_list[11], '{}-Assay.xls'.format(compound)))
+
     print("Reports saved successfully, check Output folder.")

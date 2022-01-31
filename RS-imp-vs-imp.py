@@ -115,19 +115,24 @@ def table_extratcor(tables, headers):
             result_tables.append(df_table)
         else:
             continue
-    df_result_table = pd.concat(result_tables, ignore_index=True)
+    try:
+        df_result_table = pd.concat(result_tables, ignore_index=True)
+    except ValueError as ve:
+        print("No tables/values found in this file\n")
+        return pd.DataFrame()
+
     return df_result_table
 
 
 def fill_rs_sheet(output_sheet, df_area_table, df_peak_table, sample_input_list, inputs):
-    #poject name
-    setOutCell(output_sheet, 2, 3, '')
-    #Date
-    setOutCell(output_sheet, 2, 4, '')
-    #Method
-    setOutCell(output_sheet, 2, 5, '')
     table_col = 2
     keys = ['Related Compound-A','Related Compound-B','Related Compound-C','Related Compound-D','Ketorolac Tromethamine']
+    #poject name
+    setOutCell(output_sheet, 2, 3, 'Ketorolac Tromethamine')
+    #Date
+    setOutCell(output_sheet, 2, 4, inputs['Details'][0])
+    #Method
+    setOutCell(output_sheet, 2, 5, inputs['Details'][1])
     for key in keys:
         df_comp_areas = df_area_table[df_area_table['Name'].str.contains(key, flags= re.IGNORECASE)]
         average_area = round(df_comp_areas['Area'].mean())
@@ -137,7 +142,7 @@ def fill_rs_sheet(output_sheet, df_area_table, df_peak_table, sample_input_list,
         area_input = list(df_comp_areas['Area'])
         input_list = inputs[key]
         # WS ID No.
-        setOutCell(output_sheet, table_col, 9, '')
+        setOutCell(output_sheet, table_col, 9, input_list[7])
         # std_wt
         setOutCell(output_sheet, table_col, 10, input_list[0])
         #  v1
@@ -151,7 +156,7 @@ def fill_rs_sheet(output_sheet, df_area_table, df_peak_table, sample_input_list,
         # v5
         setOutCell(output_sheet, table_col, 15, input_list[5])
         # potency
-        setOutCell(output_sheet, table_col, 16, input_list[-1])
+        setOutCell(output_sheet, table_col, 16, input_list[6])
         # areas
         setOutCell(output_sheet, table_col, 18, area_input[0])
         setOutCell(output_sheet, table_col, 19, area_input[1])
@@ -205,7 +210,7 @@ def fill_rs_sheet(output_sheet, df_area_table, df_peak_table, sample_input_list,
         setOutCell(output_sheet, 6, table_row, row[5])
         table_row +=1
 
-    sum_of_impurities = round(df_peak_table["% w/w"].sum(), ndigits=2)
+    sum_of_impurities = str(round(df_peak_table["% w/w"].sum(), ndigits=2))
     setOutCell(output_sheet, 6, 77, sum_of_impurities)
 
 def initiate_report_creation(compound, df_rrf, df_sample_prep, chrom_inputs, area_inputs, inputs):
@@ -223,7 +228,7 @@ def initiate_report_creation(compound, df_rrf, df_sample_prep, chrom_inputs, are
     # area tables extraction
     area_tables =  []
     for area_input in area_inputs:
-        tables = camelot.read_pdf(area_input, pages= 'all',flavor='stream')
+        tables = camelot.read_pdf(area_input, pages= 'all', line_scale = 30)
         df_area = table_extratcor(tables, area_headers)
         df_area = df_area[['Name','Area']]
         area_tables.append(df_area)
@@ -239,8 +244,14 @@ def initiate_report_creation(compound, df_rrf, df_sample_prep, chrom_inputs, are
         # peak tables extratcion
         tables = camelot.read_pdf(chrom_input, pages= 'all', line_scale =30)
         df_peak_table = table_extratcor(tables, chrom_headers)
+        if (df_peak_table.empty):
+            continue
         df_peak_table = df_peak_table.drop_duplicates(keep="first")
-        base_rt = float(df_peak_table['Ret. Time'][df_peak_table['Name'].str.contains(compound, flags = re.IGNORECASE)].values.tolist()[0])
+        try:
+            base_rt = float(df_peak_table['Ret. Time'][df_peak_table['Name'].str.contains(compound, flags = re.IGNORECASE)].values.tolist()[0])
+        except IndexError as ie:
+            print("\"{}\" might not be present in the tables of the file {}.Please check this file".format(compound,worksheet_name))
+            continue
         cond_1 = df_peak_table["Name"] == ''
         cond_2 = df_peak_table["Name"] == np.nan
         cond_3 = df_peak_table["Name"].str.contains(compound, flags = re.IGNORECASE)
@@ -276,22 +287,19 @@ if __name__ == '__main__':
     # compound = 'Acyclovir'
     # input_list = [50.43,100,5,50,5,50,1,1,1,1,94.4]
     compound = 'Ketorolac Tromethamine'
-
+    year = str(datetime.today().year)
     # input data sources
     df_rrf = pd.read_excel(os.path.join(os.getcwd(), 'data', 'Templates', 'RRF-template.xlsx'))
     df_sample_prep = pd.read_excel(os.path.join(os.getcwd(), 'data', 'Templates', 'RS-sample-preparation.xlsx'))
-    chrom_inputs = glob.glob(os.path.join(os.getcwd(), "data", "imp-vs-imp", compound, '*.pdf'))
-    area_inputs = glob.glob(os.path.join(os.getcwd(), "data", "imp-vs-imp", compound, '*areas*.pdf'))
-    chrom_inputs = [chrom_input for chrom_input in chrom_inputs if chrom_input not in area_inputs]
     inputs = {
-    'Ketorolac Tromethamine': [10.83,100,1,20,2,50,100],
-    'Related Compound-A': [1.019,10,1,20,2,50,92.73],
-    'Related Compound-B': [1.0955,10,1,20,2,50,99.31],
-    'Related Compound-C': [1.0957,10,1,20,2,50,99.54],
-    'Related Compound-D': [1.1931,10,1,20,2,50,98.14],
+    'Ketorolac Tromethamine': [10.83,100,1,20,2,50,100, 'test-number'],
+    'Related Compound-A': [1.019,10,1,20,2,50,92.73, 'test-number'],
+    'Related Compound-B': [1.0955,10,1,20,2,50,99.31, 'test-number'],
+    'Related Compound-C': [1.0957,10,1,20,2,50,99.54, 'test-number'],
+    'Related Compound-D': [1.1931,10,1,20,2,50,98.14, 'test-number'],
     }
     # for key in inputs:
-    #     input_list[key] = [0]*7
+    #     input_list[key] = [0]*8
     # input_list[key][0] = float(input("Enter the Weight taken for {} ".format(key)))
     # input_list[key][1] = float(input("Enter the standard preparation v1 for {} ".fromat(key)))
     # input_list[key][2] = float(input("Enter the standard preparation v2 for {} ".fromat(key)))
@@ -299,7 +307,13 @@ if __name__ == '__main__':
     # input_list[key][4] = float(input("Enter the standard preparation v4 for {} ".fromat(key)))
     # input_list[key][5] = float(input("Enter the standard preparation v5 for {} ".fromat(key)))
     # input_list[key][6] = float(input("Enter the standard preparation Potency for {} ".fromat(key)))
-
+    # input_list[key][7] = input("Enter the WSID number for {} ".fromat(key))
+    inputs['Details'] = [0]*2
+    inputs['Details'][0] = input("Enter the date of analysis dd.mm.yyyy ")
+    inputs['Details'][1] = input("Enter the method of reference ")
+    chrom_inputs = glob.glob(os.path.join(os.getcwd(), "data", year, compound, "RS", inputs['Details'][0], '*.pdf'))
+    area_inputs = glob.glob(os.path.join(os.getcwd(),"data", year, compound, "RS", inputs['Details'][0], '*standard*.pdf'))
+    chrom_inputs = [chrom_input for chrom_input in chrom_inputs if chrom_input not in area_inputs]
     initiate_report_creation(compound, df_rrf, df_sample_prep, chrom_inputs, area_inputs, inputs)
-    ivi_template.save(os.path.join(os.getcwd(), "data", 'output', '{}-RS.xls'.format(compound)))
+    ivi_template.save(os.path.join(os.getcwd(), "data", year, compound, "RS",  inputs['Details'][0], '{}-RS.xls'.format(compound)))
     print("Reports saved successfully, check Output folder.")
