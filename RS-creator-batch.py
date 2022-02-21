@@ -201,19 +201,21 @@ def fill_rs_sheet(output_sheet, df_area_table, df_peak_table, sample_input_list,
         table_row +=1
 
     sum_of_impurities = str(round(df_peak_table["% w/w"].sum(), ndigits=2))
-    setOutCell(output_sheet, 6, 62, sum_of_impurities)
+    setOutCell(output_sheet, 6, 61, sum_of_impurities)
 
-def initiate_report_creation(compound, df_rrf, df_sample_prep, chrom_inputs, area_input, input_list):
-    sample_wt = df_sample_prep['vials'][df_sample_prep["Compound"].str.contains(compound, flags = re.IGNORECASE)].values.tolist()[0]
-    sample_v1 = df_sample_prep['v1'][df_sample_prep["Compound"].str.contains(compound, flags = re.IGNORECASE)].values.tolist()[0]
-    sample_v2 = df_sample_prep['v2'][df_sample_prep["Compound"].str.contains(compound, flags = re.IGNORECASE)].values.tolist()[0]
-    sample_v3 = df_sample_prep['v3'][df_sample_prep["Compound"].str.contains(compound, flags = re.IGNORECASE)].values.tolist()[0]
-    sample_v4 = df_sample_prep['v4'][df_sample_prep["Compound"].str.contains(compound, flags = re.IGNORECASE)].values.tolist()[0]
-    sample_v5 = df_sample_prep['v5'][df_sample_prep["Compound"].str.contains(compound, flags = re.IGNORECASE)].values.tolist()[0]
-    sample_v6 = df_sample_prep['v6'][df_sample_prep["Compound"].str.contains(compound, flags = re.IGNORECASE)].values.tolist()[0]
-    sample_v7 = df_sample_prep['v7'][df_sample_prep["Compound"].str.contains(compound, flags = re.IGNORECASE)].values.tolist()[0]
-    label_claim = df_sample_prep['label claim'][df_sample_prep["Compound"].str.contains(compound, flags = re.IGNORECASE)].values.tolist()[0]
-    unit = df_sample_prep['per unit'][df_sample_prep["Compound"].str.contains(compound, flags = re.IGNORECASE)].values.tolist()[0]
+def initiate_report_creation(compound, strength, df_rrf, df_sample_prep, chrom_inputs, area_input, input_list):
+    cond_1 = df_sample_prep["Compound"].str.contains(compound, flags = re.IGNORECASE)
+    cond_2 = df_sample_prep["Strength"] == strength
+    sample_wt = df_sample_prep['Sample Volume'][cond_1 & cond_2].values.tolist()[0]
+    sample_v1 = df_sample_prep['v1'][cond_1 & cond_2].values.tolist()[0]
+    sample_v2 = df_sample_prep['v2'][cond_1 & cond_2].values.tolist()[0]
+    sample_v3 = df_sample_prep['v3'][cond_1 & cond_2].values.tolist()[0]
+    sample_v4 = df_sample_prep['v4'][cond_1 & cond_2].values.tolist()[0]
+    sample_v5 = df_sample_prep['v5'][cond_1 & cond_2].values.tolist()[0]
+    sample_v6 = df_sample_prep['v6'][cond_1 & cond_2].values.tolist()[0]
+    sample_v7 = df_sample_prep['v7'][cond_1 & cond_2].values.tolist()[0]
+    label_claim = df_sample_prep['label claim'][cond_1 & cond_2].values.tolist()[0]
+    unit = df_sample_prep['per unit'][cond_1 & cond_2].values.tolist()[0]
 
     constant_1 = (input_list[0]/input_list[1]) * (input_list[2]/input_list[3]) * (input_list[4]/input_list[5])*(input_list[6]/input_list[7]) * (input_list[8]/input_list[9])
     constant_2 = (sample_v1/sample_wt) * (sample_v3/sample_v2) * (sample_v5/sample_v4) * (sample_v7/sample_v6) * (input_list[10]/label_claim)
@@ -256,7 +258,7 @@ def initiate_report_creation(compound, df_rrf, df_sample_prep, chrom_inputs, are
         df_peak_table['RRF'] = rrfs
         df_peak_table["% w/w"] = impurities
         df_peak_table = df_peak_table[['Name', 'Ret. Time','RRT', 'RRF', 'Area', '% w/w']]
-
+        df_peak_table['Area'][df_peak_table["Name"].str.contains(compound, flags = re.IGNORECASE)] = ''
         # writing to output sheet
 
         rs_template_sheet = rs_template.get_sheet(index)
@@ -276,6 +278,7 @@ if __name__ == '__main__':
     # compound = 'Acyclovir'
     # input_list = [50.43,100,5,50,5,50,1,1,1,1,94.4]
     compound = input("Enter the compund name [As mentioned in the chromatogram] ")
+    strength = float(input("Enter the strength of the compound "))
     year = str(datetime.today().year)
 
     # input data sources
@@ -303,6 +306,6 @@ if __name__ == '__main__':
     chrom_inputs = glob.glob(os.path.join(os.getcwd(), "data", year, compound, "RS", input_list[11], '*.pdf'))
     chrom_inputs.remove(area_input)
 
-    initiate_report_creation(compound, df_rrf, df_sample_prep, chrom_inputs, area_input, input_list)
+    initiate_report_creation(compound,strength, df_rrf, df_sample_prep, chrom_inputs, area_input, input_list)
     rs_template.save(os.path.join(os.getcwd(), "data", year, compound, "RS", input_list[11], '{}-RS.xls'.format(compound)))
     print("Reports saved successfully, check Output folder.")

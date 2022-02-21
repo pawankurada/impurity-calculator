@@ -12,7 +12,7 @@ import camelot
 import tabula
 
 # template sheet
-assay_template_input = xlrd.open_workbook(os.path.join(os.getcwd(), "data", "Templates",'Assay-template.xls'), formatting_info=True)
+assay_template_input = xlrd.open_workbook(os.path.join(os.getcwd(), "data", "Templates",'Lcysteine-template.xls'), formatting_info=True)
 assay_template = xlutils.copy.copy(assay_template_input)
 
 # Table headers
@@ -143,8 +143,6 @@ def fill_rs_sheet(output_sheet, df_area_table, df_peak_table, sample_input_list,
         setOutCell(output_sheet, 3, table_row, row[1])
         # Label Claim
         setOutCell(output_sheet, 9, table_row, row[6])
-        # per unit
-        setOutCell(output_sheet, 10, table_row, row[7])
         # sample_wt
         setOutCell(output_sheet, 5, table_row, row[2])
         #  v1
@@ -153,24 +151,24 @@ def fill_rs_sheet(output_sheet, df_area_table, df_peak_table, sample_input_list,
         setOutCell(output_sheet, 7, table_row, row[4])
         #  v3
         setOutCell(output_sheet, 8, table_row, row[5])
+        # density
+        setOutCell(output_sheet, 10, table_row, row[8])
         # Area
-        setOutCell(output_sheet, 11, table_row, row[8])
+        setOutCell(output_sheet, 11, table_row, row[9])
         #  Assay%
-        setOutCell(output_sheet, 12, table_row, row[9])
+        setOutCell(output_sheet, 12, table_row, row[10])
         table_row +=1
 
 def initiate_report_creation(compound,concentration, df_sample_prep, chrom_inputs, area_input, input_list):
     cond_1 = df_sample_prep["Compound"].str.contains(compound, flags = re.IGNORECASE)
     cond_2 = df_sample_prep["concentration"] == concentration
-    sample_qty = df_sample_prep['sample quantity'][cond_1 & cond_2].values.tolist()[0]
     sample_v1 = df_sample_prep['v1'][cond_1 & cond_2].values.tolist()[0]
     sample_v2 = df_sample_prep['v2'][cond_1 & cond_2].values.tolist()[0]
     sample_v3 = df_sample_prep['v3'][cond_1 & cond_2].values.tolist()[0]
     label_claim = df_sample_prep['label claim'][cond_1 & cond_2].values.tolist()[0]
     unit = df_sample_prep['per unit'][cond_1 & cond_2].values.tolist()[0]
-
     constant_1 = (input_list[0]/input_list[1]) * (input_list[2]/input_list[3]) * (input_list[4]/input_list[5])*(input_list[6]/input_list[7]) * (input_list[8]/input_list[9])
-    constant_2 = (sample_v1/sample_qty) * (sample_v3/sample_v2) * (input_list[10]/label_claim)
+
     # area table extraction
     tables = camelot.read_pdf(area_input, pages= 'all', line_scale =30)
     # tables = [tables[6]] #temporary for lidocaine
@@ -184,7 +182,10 @@ def initiate_report_creation(compound,concentration, df_sample_prep, chrom_input
     peak_master = []
     for index, chrom_input in enumerate(chrom_inputs):
         worksheet_name = chrom_input.split("\\")[-1].strip(".pdf")
-        print(worksheet_name)
+        sample_qty = float(input("Enter the sample quantity for the batch {} ".format(worksheet_name)))
+        density = float(input("Enter the density for the batch {} ".format(worksheet_name)))
+
+        constant_2 = (sample_v1/sample_qty) * (sample_v3/sample_v2) * (input_list[10]/label_claim) * density
         # peak tables extratcion
         tables = camelot.read_pdf(chrom_input, pages= 'all', line_scale =30)
         df_peak_table = table_extratcor(tables, chrom_headers)
@@ -218,7 +219,8 @@ def initiate_report_creation(compound,concentration, df_sample_prep, chrom_input
         df_peak_table["V3"] = sample_v3
         df_peak_table["Label claim"] = label_claim
         df_peak_table["Per Unit"] = unit
-        df_peak_table = df_peak_table[['B.no', 'Condition', 'Sample quantity', 'V1', 'V2', 'V3', 'Label claim', 'Per Unit', 'Area', 'Assay%']]
+        df_peak_table["Density"] = density
+        df_peak_table = df_peak_table[['B.no', 'Condition', 'Sample quantity', 'V1', 'V2', 'V3', 'Label claim', 'Per Unit','Density', 'Area', 'Assay%']]
         peak_master.append(df_peak_table)
 
         # writing to output sheet
@@ -230,7 +232,8 @@ def initiate_report_creation(compound,concentration, df_sample_prep, chrom_input
     # assay_template.active_sheet = 0
 
 if __name__ == '__main__':
-    compound = input("Enter the compund name [As mentioned in the chromatogram] ")
+    # compound = input("Enter the compund name [As mentioned in the chromatogram] ")
+    compound = 'L-Cysteine'
     concentration = float(input("Enter the concentration "))
     year = str(datetime.today().year)
     # input data sources
@@ -252,10 +255,10 @@ if __name__ == '__main__':
     input_list[13] = input("Enter WSID number ")
     input_list[14] = input("Enter the use before date (dd/mm/yyyy) ")
     input_list[15] = compound
-    area_input = os.path.join(os.getcwd(), "data", year, compound, "Assay", input_list[11], "{}-areas.pdf".format(compound))
-    chrom_inputs = glob.glob(os.path.join(os.getcwd(), "data", year, compound, "Assay", input_list[11],  '*.pdf'))
+    area_input = os.path.join(os.getcwd(), "data", year, "Acetaminophen", "L-Cysteine Assay", input_list[11], "{}-areas.pdf".format(compound))
+    chrom_inputs = glob.glob(os.path.join(os.getcwd(),"data", year, "Acetaminophen", "L-Cysteine Assay", input_list[11],  '*.pdf'))
     chrom_inputs.remove(area_input)
     initiate_report_creation(compound, concentration, df_sample_prep, chrom_inputs, area_input, input_list)
-    assay_template.save(os.path.join(os.getcwd(), "data", year, compound, "Assay", input_list[11], '{}-Assay.xls'.format(compound)))
+    assay_template.save(os.path.join(os.getcwd(), "data", year,"Acetaminophen", "L-Cysteine Assay", input_list[11], '{}-Assay.xls'.format(compound)))
 
     print("Reports saved successfully, check Output folder.")

@@ -214,7 +214,7 @@ def fill_rs_sheet(output_sheet, df_area_table, df_peak_table, sample_input_list,
     setOutCell(output_sheet, 6, 77, sum_of_impurities)
 
 def initiate_report_creation(compound, df_rrf, df_sample_prep, chrom_inputs, area_inputs, inputs):
-    sample_wt = df_sample_prep['vials'][df_sample_prep["Compound"].str.contains(compound, flags = re.IGNORECASE)].values.tolist()[0]
+    sample_wt = df_sample_prep['Sample Volume'][df_sample_prep["Compound"].str.contains(compound, flags = re.IGNORECASE)].values.tolist()[0]
     sample_v1 = df_sample_prep['v1'][df_sample_prep["Compound"].str.contains(compound, flags = re.IGNORECASE)].values.tolist()[0]
     sample_v2 = df_sample_prep['v2'][df_sample_prep["Compound"].str.contains(compound, flags = re.IGNORECASE)].values.tolist()[0]
     sample_v3 = df_sample_prep['v3'][df_sample_prep["Compound"].str.contains(compound, flags = re.IGNORECASE)].values.tolist()[0]

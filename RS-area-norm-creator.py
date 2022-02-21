@@ -64,15 +64,32 @@ def shift_row_to_top(df, index_to_shift):
     df = df.reindex([index_to_shift] + idx)
     return df
 
+def check_transpose(df_table):
+    df_table_t = df_table.T
+    search = df_table_t.where(df_table_t==chrom_headers[1]).dropna(how='all').dropna(axis=1)
+    inx = list(search.index)
+    if(inx):
+        inx= inx[0]
+        new_header = df_table_t.iloc[inx]
+        if('Ret. Time' and 'Area' in list(new_header)):
+            if(inx == df_table_t.shape[0]-1):
+                return df_table.T.reindex(index=df_table_t.index[::-1]).reset_index()
+            else:
+                return df_table.T
+        else:
+            return df_table
+    else:
+        return df_table
+
 def table_extratcor(tables, headers):
     df_result_table =''
     result_tables = []
     for table in tables:
         df_table = table.df
+        df_table = check_transpose(df_table)
         search = df_table.where(df_table==headers[0]).dropna(how='all').dropna(axis=1)
         inx = list(search.index)
         if(inx):
-            print(table)
             inx= inx[0]
             new_header = df_table.iloc[inx]
             new_start_inx = inx+1
@@ -121,9 +138,10 @@ def fill_rs_sheet(output_sheet, df_peak_table, user_input_list, ap_sum):
     sum_of_percentage = df_peak_table["Area%"].sum()
     sum_of_rrt = round(((user_input_list[4]*user_input_list[0]) / ((user_input_list[4] * user_input_list[0])+sum_of_areas))*100, ndigits=1)
 
-    setOutCell(output_sheet, 2, 103, sum_of_areas)
-    setOutCell(output_sheet, 3, 103, ap_sum)
-    setOutCell(output_sheet, 4, 103  , sum_of_rrt)
+    setOutCell(output_sheet, 1, table_row, "SUM")
+    setOutCell(output_sheet, 2, table_row, sum_of_areas)
+    setOutCell(output_sheet, 3, table_row, ap_sum)
+    setOutCell(output_sheet, 4, table_row  , sum_of_rrt)
 
 def initiate_report_creation(compound, chrom_inputs, input_list):
     dil_s01 = input_list[1]
