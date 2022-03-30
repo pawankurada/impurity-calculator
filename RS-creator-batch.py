@@ -18,8 +18,10 @@ rs_template = xlutils.copy.copy(rs_template_input)
 # Table headers
 # chrom_headers = ['Peak#','Name','Ret. Time','Area','Area%','RRT']
 # area_headers = ['Title', 'Ret. Time', 'Area', 'Area%', 'NTP', 'Tailing Factor']
-chrom_headers = ['Name','Ret. Time','Area']
-area_headers = ['Title','Area']
+chrom_headers_shimadzu = ['Name','Ret. Time','Area']
+area_headers_shimadzu = ['Title','Area']
+chrom_headers_empower = ['Name','RT','Area']
+area_headers_empower = ['SampleName', 'Area']
 
 
 def _getOutCell(outSheet, colIndex, rowIndex):
@@ -52,6 +54,8 @@ def calc_results (df_peak, df_rrf, compound, average_area, constant_1, constant_
     ignore_compounds = []
     for index, row in df_peak.iterrows():
         name =row[0]
+        if(re.match('unknown[-]*|unkown[-]*', name.lower())):
+            name = 'Unknown'
         if(name.lower() == compound.lower()):
             impurity_master.append(0)
             rrt_master.append(1)
@@ -61,8 +65,13 @@ def calc_results (df_peak, df_rrf, compound, average_area, constant_1, constant_
             continue
 #             impurity_master.append(0)
 #             rrt_master.append(0)
-
-        area = float(row[2])
+        try:
+            area = float(row[2])
+        except ValueError as ve:
+            impurity_master.append(0)
+            rrt_master.append(1)
+            rrf_master.append(0)
+            continue
         rrf_cond_1 = df_rrf['Compound'].str.contains(compound, flags = re.IGNORECASE)
         rrf_cond_2 = df_rrf['Impurity/Active Name'].str.contains(name, flags = re.IGNORECASE)
         rrf = df_rrf['RRF'][rrf_cond_1 & rrf_cond_2].values.tolist()
@@ -100,8 +109,12 @@ def table_extratcor(tables, headers):
             new_start_inx = inx+1
             df_table = df_table[new_start_inx:]
             df_table.columns = new_header
-            df_table = df_table[headers]
-            result_tables.append(df_table)
+            try:
+                df_table = df_table[headers]
+                result_tables.append(df_table)
+            except KeyError as ke:
+                print("Please check this file\n")
+                return pd.DataFrame([], columns =headers)
         else:
             continue
     try:
@@ -203,7 +216,7 @@ def fill_rs_sheet(output_sheet, df_area_table, df_peak_table, sample_input_list,
     sum_of_impurities = str(round(df_peak_table["% w/w"].sum(), ndigits=2))
     setOutCell(output_sheet, 6, 61, sum_of_impurities)
 
-def initiate_report_creation(compound, strength, df_rrf, df_sample_prep, chrom_inputs, area_input, input_list):
+def initiate_report_creation(compound, strength, df_rrf, df_sample_prep, chrom_inputs, area_input, input_list, software):
     cond_1 = df_sample_prep["Compound"].str.contains(compound, flags = re.IGNORECASE)
     cond_2 = df_sample_prep["Strength"] == strength
     sample_wt = df_sample_prep['Sample Volume'][cond_1 & cond_2].values.tolist()[0]
@@ -221,20 +234,24 @@ def initiate_report_creation(compound, strength, df_rrf, df_sample_prep, chrom_i
     constant_2 = (sample_v1/sample_wt) * (sample_v3/sample_v2) * (sample_v5/sample_v4) * (sample_v7/sample_v6) * (input_list[10]/label_claim)
     # area table extraction
     tables = camelot.read_pdf(area_input, pages= 'all', line_scale =30)
+    area_headers = area_headers_shimadzu if software == 'Shimadzu' else area_headers_empower
     df_area_table = table_extratcor(tables, area_headers)
+    df_area_table.columns = area_headers_shimadzu
     df_area_table = df_area_table[['Title','Area']]
+    df_area_table['Title'] = ['Standard Solution_01','Standard Solution_02','Standard Solution_03','Standard Solution_04','Standard Solution_05','Standard Solution_06','Average', '%RSD','Standard Deviation']
     average_area = float(df_area_table["Area"][df_area_table["Title"] == "Average"].values.tolist()[0])
-
 
     batch_size = len(chrom_inputs)
     outputs = []
     worksheets = rs_template._Workbook__worksheets
+    chrom_headers = chrom_headers_shimadzu if software == 'Shimadzu' else chrom_headers_empower
     for index, chrom_input in enumerate(chrom_inputs):
         worksheet_name =  chrom_input.split("\\")[-1].strip(".pdf")
         print(worksheet_name)
         # peak tables extratcion
         tables = camelot.read_pdf(chrom_input, pages= 'all', line_scale =30)
         df_peak_table = table_extratcor(tables, chrom_headers)
+        df_peak_table.columns = chrom_headers_shimadzu
         if (df_peak_table.empty):
             continue
         df_peak_table = df_peak_table.drop_duplicates(keep="first")
@@ -277,6 +294,8 @@ if __name__ == '__main__':
     # LabetalolHCl
     # compound = 'Acyclovir'
     # input_list = [50.43,100,5,50,5,50,1,1,1,1,94.4]
+    software = int(input("Enter 1 for Shimadzu\nEnter 2 for Empower"))
+    software = 'Shimadzu' if software == 1 else 'Empower'
     compound = input("Enter the compund name [As mentioned in the chromatogram] ")
     strength = float(input("Enter the strength of the compound "))
     year = str(datetime.today().year)
@@ -286,26 +305,32 @@ if __name__ == '__main__':
     df_sample_prep = pd.read_excel(os.path.join(os.getcwd(), 'data', 'Templates', 'RS-sample-preparation.xlsx'))
 
     input_list = [0]*16
-    input_list[0] = float(input("Enter the Weight taken "))
-    input_list[1] = float(input("Enter the standard preparation v1 "))
-    input_list[2] = float(input("Enter the standard preparation v2 "))
-    input_list[3] = float(input("Enter the standard preparation v3 "))
-    input_list[4] = float(input("Enter the standard preparation v4 "))
-    input_list[5] = float(input("Enter the standard preparation v5 "))
-    input_list[6] = float(input("Enter the standard preparation v6 "))
-    input_list[7] = float(input("Enter the standard preparation v7 "))
-    input_list[8] = float(input("Enter the standard preparation factor 1 "))
-    input_list[9] = float(input("Enter the standard preparation factor 2 "))
-    input_list[10] = float(input("Enter the standard preparation Potency "))
-    input_list[11] = input("Enter the date of analysis (dd.mm.yyyy) ")
-    input_list[12] = input("Enter the method of reference ")
-    input_list[13] = input("Enter WSID number ")
-    input_list[14] = input("Enter the use before date (dd.mm.yyyy) ")
-    input_list[15] = compound
-    area_input = os.path.join(os.getcwd(), "data", year, compound, "RS", input_list[11], "{}-areas.pdf".format(compound))
-    chrom_inputs = glob.glob(os.path.join(os.getcwd(), "data", year, compound, "RS", input_list[11], '*.pdf'))
-    chrom_inputs.remove(area_input)
+    input_list = [55.0,200,2,25,4,200,383.37,432.37,1,1,92.9,'19.02.22','AMD/21/PAN/RS-00','PS0010119','Dec-23', compound]
+    # input_list[0] = float(input("Enter the Weight taken "))
+    # input_list[1] = float(input("Enter the standard preparation v1 "))
+    # input_list[2] = float(input("Enter the standard preparation v2 "))
+    # input_list[3] = float(input("Enter the standard preparation v3 "))
+    # input_list[4] = float(input("Enter the standard preparation v4 "))
+    # input_list[5] = float(input("Enter the standard preparation v5 "))
+    # input_list[6] = float(input("Enter the standard preparation v6 "))
+    # input_list[7] = float(input("Enter the standard preparation v7 "))
+    # input_list[8] = float(input("Enter the standard preparation factor 1 "))
+    # input_list[9] = float(input("Enter the standard preparation factor 2 "))
+    # input_list[10] = float(input("Enter the standard preparation Potency "))
+    # input_list[11] = input("Enter the date of analysis (dd.mm.yyyy) ")
+    # input_list[12] = input("Enter the method of reference ")
+    # input_list[13] = input("Enter WSID number ")
+    # input_list[14] = input("Enter the use before date (dd.mm.yyyy) ")
+    # input_list[15] = compound
+    data_path = 'data' if software == 'Shimadzu' else os.path.join('data','empower-data')
+    area_input = os.path.join(os.getcwd(), data_path, year, compound, "RS", input_list[11], "{}-areas.pdf".format(compound))
+    chrom_inputs = glob.glob(os.path.join(os.getcwd(), data_path, year, compound, "RS", input_list[11], '*.pdf'))
+    try:
+        chrom_inputs.remove(area_input)
+    except ValueError as ve:
+        print("Check the name of the RSD file. Make sure it is in the format: <compound name>-areas")
+        exit()
 
-    initiate_report_creation(compound,strength, df_rrf, df_sample_prep, chrom_inputs, area_input, input_list)
-    rs_template.save(os.path.join(os.getcwd(), "data", year, compound, "RS", input_list[11], '{}-RS.xls'.format(compound)))
+    initiate_report_creation(compound,strength, df_rrf, df_sample_prep, chrom_inputs, area_input, input_list, software)
+    rs_template.save(os.path.join(os.getcwd(), data_path, year, compound, "RS", input_list[11], '{}-RS.xls'.format(compound)))
     print("Reports saved successfully, check Output folder.")

@@ -12,8 +12,8 @@ import camelot
 import tabula
 
 # template sheet
-ivi_template_input = xlrd.open_workbook(os.path.join(os.getcwd(), "data", "Templates",'Imp-vs-imp-template.xls'), formatting_info=True)
-ivi_template = xlutils.copy.copy(ivi_template_input)
+# ivi_template_input = xlrd.open_workbook(os.path.join(os.getcwd(), "data", "Templates",'Ketorolac-template.xls'), formatting_info=True)
+# ivi_template = xlutils.copy.copy(ivi_template_input)
 
 # Table headers
 # chrom_headers = ['Peak#','Name','Ret. Time','Area','Area%','RRT']
@@ -124,11 +124,15 @@ def table_extratcor(tables, headers):
     return df_result_table
 
 
-def fill_rs_sheet(output_sheet, df_area_table, df_peak_table, sample_input_list, inputs):
+def fill_rs_sheet(output_sheet, df_area_table, df_peak_table, sample_input_list, inputs, compound, base_rt):
     table_col = 2
-    keys = ['Related Compound-A','Related Compound-B','Related Compound-C','Related Compound-D','Ketorolac Tromethamine']
+    keys = {
+    'Ketorolac Tromethamine':['Related Compound-A','Related Compound-B','Related Compound-C','Related Compound-D','Ketorolac Tromethamine'],
+    'Propofol': ['Impurity-A','Impurity-B', 'Propofol']
+    }
+    keys = keys[compound]
     #poject name
-    setOutCell(output_sheet, 2, 3, 'Ketorolac Tromethamine')
+    setOutCell(output_sheet, 2, 3, compound)
     #Date
     setOutCell(output_sheet, 2, 4, inputs['Details'][0])
     #Method
@@ -178,8 +182,6 @@ def fill_rs_sheet(output_sheet, df_area_table, df_peak_table, sample_input_list,
     setOutCell(output_sheet, 4, 30, '')
     # Label Claim
     setOutCell(output_sheet, 5, 30, sample_input_list[8])
-    # per unit
-    setOutCell(output_sheet, 7, 30, sample_input_list[9])
     # sample_wt
     setOutCell(output_sheet, 2, 31, sample_input_list[0])
     #  v1
@@ -192,15 +194,21 @@ def fill_rs_sheet(output_sheet, df_area_table, df_peak_table, sample_input_list,
     setOutCell(output_sheet, 6, 31, sample_input_list[4])
     # v5
     setOutCell(output_sheet, 6, 32, sample_input_list[5])
-    # v6
-    setOutCell(output_sheet, 8, 31, sample_input_list[6])
-    # v7
-    setOutCell(output_sheet, 8, 32, sample_input_list[7])
-
+    if(compound == 'ketorolac Tromethamine'):
+        # per unit
+        setOutCell(output_sheet, 7, 30, sample_input_list[9])
+        # v6
+        setOutCell(output_sheet, 8, 31, sample_input_list[6])
+        # v7
+        setOutCell(output_sheet, 8, 32, sample_input_list[7])
+    if(compound == 'Propofol'):
+        # RT
+        setOutCell(output_sheet, 2, 34, base_rt)
 #   Impurity table
     table_row = 37
+    table_limit = 76 if compound == 'ketorolac Tromethamine' else 54
     for index, row in df_peak_table.iterrows():
-        if(table_row > 76):
+        if(table_row > table_limit):
             break
         setOutCell(output_sheet, 1, table_row, row[0])
         setOutCell(output_sheet, 2, table_row, row[1])
@@ -211,7 +219,7 @@ def fill_rs_sheet(output_sheet, df_area_table, df_peak_table, sample_input_list,
         table_row +=1
 
     sum_of_impurities = str(round(df_peak_table["% w/w"].sum(), ndigits=2))
-    setOutCell(output_sheet, 6, 77, sum_of_impurities)
+    setOutCell(output_sheet, 6, table_limit+1, sum_of_impurities)
 
 def initiate_report_creation(compound, df_rrf, df_sample_prep, chrom_inputs, area_inputs, inputs):
     sample_wt = df_sample_prep['Sample Volume'][df_sample_prep["Compound"].str.contains(compound, flags = re.IGNORECASE)].values.tolist()[0]
@@ -225,6 +233,8 @@ def initiate_report_creation(compound, df_rrf, df_sample_prep, chrom_inputs, are
     label_claim = df_sample_prep['label claim'][df_sample_prep["Compound"].str.contains(compound, flags = re.IGNORECASE)].values.tolist()[0]
     unit = df_sample_prep['per unit'][df_sample_prep["Compound"].str.contains(compound, flags = re.IGNORECASE)].values.tolist()[0]
     sample_input_list = [sample_wt, sample_v1, sample_v2, sample_v3, sample_v4, sample_v5, sample_v6, sample_v7, label_claim, unit]
+    ivi_template_input = xlrd.open_workbook(os.path.join(os.getcwd(), "data", "Templates",'{}-template.xls'.format(compound)), formatting_info=True)
+    ivi_template = xlutils.copy.copy(ivi_template_input)
     # area tables extraction
     area_tables =  []
     for area_input in area_inputs:
@@ -264,7 +274,6 @@ def initiate_report_creation(compound, df_rrf, df_sample_prep, chrom_inputs, are
         for ic in ignore_compounds:
             inx_to_remove = df_peak_table[df_peak_table['Name'] == ic].index
             df_peak_table = df_peak_table.drop(inx_to_remove)
-
         df_peak_table['RRT'] = rrts
         df_peak_table['RRF'] = rrfs
         df_peak_table["% w/w"] = impurities
@@ -272,32 +281,36 @@ def initiate_report_creation(compound, df_rrf, df_sample_prep, chrom_inputs, are
 
         # writing to output sheet
         ivi_template_sheet = ivi_template.get_sheet(index)
-        fill_rs_sheet(ivi_template_sheet, df_area_table, df_peak_table, sample_input_list, inputs)
+        if(compound == 'Ketorolac Tromethamine'):
+            fill_rs_sheet(ivi_template_sheet, df_area_table, df_peak_table, sample_input_list, inputs, compound, base_rt)
+        elif(compound == 'Propofol'):
+            fill_rs_sheet(ivi_template_sheet, df_area_table, df_peak_table, sample_input_list, inputs, compound, base_rt)
         worksheets[index].name = worksheet_name
 
     ivi_template._Workbook__worksheets = [worksheet for worksheet in ivi_template._Workbook__worksheets if "Sheet" not in worksheet.name ]
     ivi_template.active_sheet = 0
+    return ivi_template
 
 if __name__ == '__main__':
-    # Bumetanide
-    # Acyclovir
-    # Famotidine
-    # ketorolacTromethamine
-    # LabetalolHCl
-    # compound = 'Acyclovir'
-    # input_list = [50.43,100,5,50,5,50,1,1,1,1,94.4]
-    compound = 'Ketorolac Tromethamine'
+    # compound = input("Enter the compund name [As mentioned in the chromatogram] ")
+    # compound = 'Ketorolac Tromethamine'
+    compound = 'Propofol'
     year = str(datetime.today().year)
     # input data sources
     df_rrf = pd.read_excel(os.path.join(os.getcwd(), 'data', 'Templates', 'RRF-template.xlsx'))
     df_sample_prep = pd.read_excel(os.path.join(os.getcwd(), 'data', 'Templates', 'RS-sample-preparation.xlsx'))
-    inputs = {
+    inputs = {'Ketorolac Tromethamine':{
     'Ketorolac Tromethamine': [10.83,100,1,20,2,50,100, 'test-number'],
     'Related Compound-A': [1.019,10,1,20,2,50,92.73, 'test-number'],
     'Related Compound-B': [1.0955,10,1,20,2,50,99.31, 'test-number'],
     'Related Compound-C': [1.0957,10,1,20,2,50,99.54, 'test-number'],
     'Related Compound-D': [1.1931,10,1,20,2,50,98.14, 'test-number'],
+    },
+    'Propofol':{'Propofol':[59.12,100,0.4,50,1,1,99.6,'test'],
+    'Impurity-A':[1.5458,10,1,50,1,1,98.95, 'test'],
+    'Impurity-B':[1.1786,10,0.4,50,1,1,97.24, 'test']}
     }
+    inputs = inputs[compound]
     # for key in inputs:
     #     input_list[key] = [0]*8
     # input_list[key][0] = float(input("Enter the Weight taken for {} ".format(key)))
@@ -314,6 +327,6 @@ if __name__ == '__main__':
     chrom_inputs = glob.glob(os.path.join(os.getcwd(), "data", year, compound, "RS", inputs['Details'][0], '*.pdf'))
     area_inputs = glob.glob(os.path.join(os.getcwd(),"data", year, compound, "RS", inputs['Details'][0], '*standard*.pdf'))
     chrom_inputs = [chrom_input for chrom_input in chrom_inputs if chrom_input not in area_inputs]
-    initiate_report_creation(compound, df_rrf, df_sample_prep, chrom_inputs, area_inputs, inputs)
+    ivi_template = initiate_report_creation(compound, df_rrf, df_sample_prep, chrom_inputs, area_inputs, inputs)
     ivi_template.save(os.path.join(os.getcwd(), "data", year, compound, "RS",  inputs['Details'][0], '{}-RS.xls'.format(compound)))
     print("Reports saved successfully, check Output folder.")
